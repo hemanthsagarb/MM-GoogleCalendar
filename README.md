@@ -40,6 +40,8 @@ run `npm install`
 - Paste the code on command line
 - After the first run, you will not be prompted again
 
+## Screenshots
+![ScreenShot](https://raw.github.com/hemanthsagarb/MM-GoogleCalendar/master/look.png)
 
 
 
