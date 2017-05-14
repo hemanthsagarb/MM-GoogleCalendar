@@ -29,7 +29,7 @@ run `npm install`
 - Select the application type Other, enter the name "Google Calendar API Quickstart", and click the Create button.
 - Click OK to dismiss the resulting dialog.
 - Click the file_download (Download JSON) button to the right of the client ID.
-- Move this file to downloaded directory (i.e. gcalendar) and rename it client_secret.json.
+- Move this file to MagicMirror home directory and rename it client_secret.json.
 
 ## Running for the first time
 
