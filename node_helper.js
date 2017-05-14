@@ -18,14 +18,11 @@ module.exports = NodeHelper.create({
 
     socketNotificationReceived: function (type, url) {
         var self = this;
-        //this.sendSocketNotification(type, url);
         fs.readFile('client_secret.json', function processClientSecrets(err, content) {
             if (err) {
                 console.log('Error loading client secret file: ' + err);
                 return;
             }
-            // Authorize a client with the loaded credentials, then call the
-            // Google Calendar API.
             self.authorize(JSON.parse(content), self.listEvents);
         });
     },
@@ -38,7 +35,6 @@ module.exports = NodeHelper.create({
         var auth = new googleAuth();
         var oauth2Client = new auth.OAuth2(clientId, clientSecret, redirectUrl);
 
-        // Check if we have previously stored a token.
         fs.readFile(TOKEN_PATH, function (err, token) {
             if (err) {
                 self.getNewToken(oauth2Client, callback);
@@ -104,14 +100,17 @@ module.exports = NodeHelper.create({
                 console.log('The API returned an error: ' + err);
                 return;
             }
-            var events = response.items;
             var timestamp = Date.now();
             var timezonedDate = moment.tz(timestamp, response.timeZone);
 
+            var events = response.items;
+            var day_long_events = self.getDayLongEvents(events, timezonedDate);
+            events = self.breakEventsFallingOnTwoDays(events);
+            var blocks = self.getSetsOfIntervals(events);
+            events = self.addPositions(blocks);
+
 
             var events_html = "";
-            var map = {};
-            var day_long_events = {};
             for (var i = 0; i < events.length; i++) {
                 var event = events[i];
 
@@ -124,53 +123,64 @@ module.exports = NodeHelper.create({
                 var diff = _date - timezonedDate.date();
                 var end = event.end.dateTime || event.end.date;
 
-                try {
-                    var toks = start.split("T")[1].split(":");
-                    var _top = parseInt(toks[0]) + parseInt(toks[1]) / 60;
+                var width = 13 / event['num_slots'];
+                var style = 'background-color:white;color:black;border:1px solid red;position: absolute;width: calc(' + width + '%);';
 
-                    toks = end.split("T")[1].split(":");
-                    var _btm = parseInt(toks[0]) + parseInt(toks[1]) / 60;
+                var toks = start.split("T")[1].split(":");
+                var start_hr = parseInt(toks[0]) + parseInt(toks[1]) / 60;
+                var _top = (2 + start_hr) * 42 + 1;
+                style += 'top:' + _top + 'px;';
 
-                    var height = (_btm - _top) * 40;
-                    var _left = 150 * (diff + 1) + (map[_top] || 0) * 75;
-                    //var summ= 'may allow you to use the vertical-align CSS property on items such as the paragraph block';
-                    //events_html += '<div style="border: 1px solid #ff3366;position:fixed;word-wrap: break-word; background-color:white;width:100px;color:black; height:' + height + 'px; top:' + (_top * 40 + 57) + 'px; left:' + _left + 'px;' + 'font-size:13px"><p>' + summ + '</p></div>';
-                    events_html += '<div style="padding:1px;text-align:left;font-size:14px;border: 1px solid #ff3366;position:fixed;background-color:white;width:70px;color:black; height:' + height + 'px; line-height:'+height+'px;top:' + (_top * 40 + 116) + 'px; left:' + _left + 'px;' + '"><span>'+event.summary+'</span> </div>';
-                    events_html += '';
-                    map[_top] = (map[_top] || 0) + 1;
 
-                } catch (e) {
-                    //events_html += '<div style="position:fixed; top:40px; left:' + ((150 * (diff + 1) ) + 'px;') + 'font-size:13px">' + event.summary + '</div>';
-                    if(!(start in day_long_events)){
-                        day_long_events[start] = event.summary;
-                    }else {
-                        day_long_events[start] += " , " + event.summary ;
-                    }
-                }
-            }
-            console.log(day_long_events);
-            for (var start in day_long_events) {
-                if (day_long_events.hasOwnProperty(start)) {
-                    var _date = parseInt(start.split("-")[2]);
-                    var diff = _date - timezonedDate.date();
+                toks = end.split("T")[1].split(":");
+                var _btm = parseInt(toks[0]) + parseInt(toks[1]) / 60;
+                var hours = (_btm - start_hr) * 2;
+                var _height = 20 * hours + (hours - 1);
+                style += 'height:' + _height + 'px;';
 
-                    events_html += '<div style="padding:1px;text-align:left;font-size:14px;border: 1px solid #ff3366;position:fixed;background-color:white;width:148px;color:black;position:fixed; top:56px; left:' + ((150 * (diff + 1) ) + 'px;') + 'font-size:13px"><span>' + day_long_events[start] + '</span></div>';
-                }
+
+                var _left = 8 + diff * 13 + width * event['slot_index'];
+                style += 'left:calc(' + _left + '% + ' + diff + 'px)';
+                console.log(style);
+
+                if (_height > 0)
+                    events_html += '<div style="' + style + '">' + event.summary + '</div>';
+                events_html += '';
             }
 
+
+            for (var i = 0; i < day_long_events.length; i++) {
+                var event = day_long_events[i];
+                var style = 'background-color:white;color:black;border:1px solid red;position: absolute;width: calc(' + width + '%);';
+                var _top = 42;
+                var _left = 8 + 13 * event['diff'];
+                style += 'top:' + _top + 'px;';
+                style += 'left:calc(' + _left + '% + ' + diff + 'px);';
+                style += 'height: 40px;';
+                events_html += '<div style="' + style + '">' + event.summary + '</div>';
+            }
             fs.readFile(path.join(__dirname, "/sample.html"), function (err, token) {
                 var html = token.toString();
                 for (var i = 0; i < 7; i++) {
                     var x = timezonedDate.weekday() % 7;
                     var day_of_week = self.getDayName(x).substr(0, 3) + "  " + (timezonedDate.month() + 1) + "/" + timezonedDate.date();
-                    html += '<div style="position:fixed; top:20px; left:' + ((150 * (i + 1) + 30) + 'px;') + 'font-size:13px">' + day_of_week + '</div>';
                     timezonedDate.add(1, 'days');
+                    var style = 'position: absolute;width: calc(' + width + '%);';
+                    var _top = 0;
+                    var _left = 8 + 13 * i;
+                    style += 'top:' + _top + 'px;';
+                    style += 'left:calc(' + _left + '% + ' + diff + 'px);';
+                    style += 'height: 40px;';
+                    events_html += '<div style="' + style + '">' + day_of_week + '</div>';
 
                 }
-                html += events_html;
+                html += '<div id="wrapper">' + events_html + '</div>';
+                console.log(html);
                 self.sendSocketNotification("WEATHER", html);
 
             });
+
+
         });
     },
 
@@ -198,6 +208,134 @@ module.exports = NodeHelper.create({
                 day = "Saturday";
         }
         return day;
+    },
+
+    addPositions: function (blocks) {
+        var events = [];
+        for (var i = 0; i < blocks.length; i++) {
+            var block = blocks[i];
+            var slots = [];
+            for (var j = 0; j < block.length; j++) {
+                var consumed = false;
+                for (var k = 0; k < slots.length; k++) {
+                    if (this.hasSlot(slots[k], block[j])) {
+                        slots[k].push(block[j]);
+                        consumed = true;
+                        break;
+                    }
+                }
+                if (!consumed) {
+                    slots.push([block[j]]);
+                }
+            }
+            for (var j = 0; j < slots.length; j++) {
+                for (var k = 0; k < slots[j].length; k++) {
+                    slots[j][k]['num_slots'] = slots.length;
+                    slots[j][k]['slot_index'] = j;
+                    events.push(slots[j][k]);
+
+                }
+            }
+        }
+        return events;
+    },
+
+    hasSlot: function (slot, event) {
+        for (var i = 0; i < slot.length; i++) {
+            if (this.isOverlapping(slot[i], event)) {
+                return false;
+            }
+        }
+        return true;
+    },
+
+    getDayLongEvents: function (events, timezonedDate) {
+        var result = [];
+        var _map = {};
+        for (var i = 0; i < events.length; i++) {
+            var event = events[i];
+            var start = event.start.dateTime || event.start.date;
+            var end = event.end.dateTime || event.end.date;
+
+            if (!(start.indexOf("T") >= 0 && end.indexOf("T") >= 0)) {
+                var _date = parseInt(event.start.date.split("-")[2]);
+                var diff = _date - timezonedDate.date();
+                _map[diff] = (_map[diff] || "") + "," + event.summary;
+            }
+        }
+        for(var diff in _map){
+            if(_map.hasOwnProperty(diff)){
+                result.push({"diff": diff, "summary": _map[diff].substr(1)});
+            }
+        }
+        return result;
+    },
+
+    breakEventsFallingOnTwoDays: function (events) {
+        var result = [];
+        for (var i = 0; i < events.length; i++) {
+            var event = events[i];
+            var start = event.start.dateTime || event.start.date;
+            var end = event.end.dateTime || event.end.date;
+            if (start.indexOf("T") >= 0 && end.indexOf("T") >= 0) {
+                var tzdiff = start.substr(19);
+                var startToks = start.split("T");
+                var endToks = end.split("T");
+                if (startToks[0] === endToks[0]) {
+                    result.push({"summary": event.summary, "start": event.start, "end": event.end});
+                } else {
+                    var start1 = start;
+                    var end1 = startToks[0] + "T23:59:59" + tzdiff;
+                    var start2 = endToks[0] + "T00:00:00" + tzdiff;
+                    var end2 = end;
+                    result.push({"summary": event.summary, "start": {"dateTime": start1}, "end": {"dateTime": end1}});
+                    result.push({"summary": event.summary, "start": {"dateTime": start2}, "end": {"dateTime": end2}});
+                }
+            } else {
+                //result.push({"summary": event.summary, "start": event.start, "end": event.end});
+            }
+        }
+        return result;
+    },
+
+    getSetsOfIntervals: function (events) {
+        var blocks = [];
+        var intervals = [];
+        for (var i = 0; i < events.length; i++) {
+            var consumed = false;
+            for (var j = 0; j < blocks.length; j++) {
+                var tmp = this.isOverlapping(intervals[j], events[i]);
+                if (tmp) {
+                    if (tmp !== intervals[j]) {
+                        intervals[j] = tmp;
+                    }
+                    blocks[j].push(events[i]);
+                    consumed = true;
+                    break;
+                }
+            }
+            if (!consumed) {
+                blocks.push([events[i]]);
+                intervals.push(events[i]);
+            }
+        }
+        return blocks;
+    },
+
+    isOverlapping: function (event1, event2) {
+        if (event1.start.dateTime < event2.start.dateTime) {
+            return this.isOverlapping(event2, event1);
+        }
+        if (event1.start.dateTime >= event2.start.dateTime && event1.end.dateTime <= event2.end.dateTime) {
+            return {"start": {"dateTime": event2.start.dateTime}, "end": {"dateTime": event2.end.dateTime}};
+        }
+        if (event2.start.dateTime >= event1.start.dateTime && event2.end.dateTime <= event1.end.dateTime) {
+            return {"start": {"dateTime": event1.start.dateTime}, "end": {"dateTime": event1.end.dateTime}};
+        }
+        if (event1.start.dateTime < event2.end.dateTime && event1.start.dateTime > event2.start.dateTime) {
+            return {"start": {"dateTime": event2.start.dateTime}, "end": {"dateTime": event1.end.dateTime}};
+        }
+        return false;
     }
 
 
